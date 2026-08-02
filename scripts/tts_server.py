@@ -18,6 +18,7 @@ import os
 import re
 import socketserver
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -89,7 +90,15 @@ def _play_bg(wav_path: Path) -> None:
         with PLAY_LOCK:
             try:
                 subprocess.run(
-                    ["aplay", "-q", "-D", AUDIO_DEVICE, str(wav_path)], check=True
+                    ["aplay", "-q", "-D", AUDIO_DEVICE, str(wav_path)],
+                    check=True,
+                    stderr=subprocess.PIPE,
+                )
+            except subprocess.CalledProcessError as exc:
+                print(
+                    f"[erreur lecture audio] device={AUDIO_DEVICE!r}: "
+                    f"{exc.stderr.decode('utf-8', 'replace').strip()}",
+                    file=sys.stderr,
                 )
             finally:
                 wav_path.unlink(missing_ok=True)
@@ -179,6 +188,7 @@ class ThreadingUnixStreamServer(
 
 
 def main() -> None:
+    print(f"Sortie audio (TTS_AUDIO_DEVICE): {AUDIO_DEVICE!r}")
     for mode, model_path in MODELS.items():
         if not model_path.exists():
             raise SystemExit(f"Modèle manquant: {model_path} (lance install.sh)")
