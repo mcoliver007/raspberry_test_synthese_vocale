@@ -199,6 +199,14 @@ def speak_read(text: str) -> float:
         start = time.monotonic()
         WORKERS["read"].synth(sentence, out)
         elapsed = time.monotonic() - start
+        with wave.open(str(out), "rb") as wf:
+            audio_duration = wf.getnframes() / wf.getframerate()
+        ratio = elapsed / audio_duration if audio_duration else float("inf")
+        print(
+            f"[read] chunk {i} ({len(sentence.split())} mots): "
+            f"synth={elapsed:.2f}s audio={audio_duration:.2f}s ratio={ratio:.2f}",
+            file=sys.stderr,
+        )
         if i == 0:
             first_elapsed = elapsed
         # La lecture se fait en tâche de fond (file d'attente via PLAY_LOCK),
