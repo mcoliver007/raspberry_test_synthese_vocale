@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Mesure le temps de synthèse (avant lecture) pour les deux modes,
-afin de vérifier que la latence reste acceptable sur le Raspberry Pi 3."""
-import subprocess
-import time
-from pathlib import Path
+"""Mesure la latence de synthèse (temps avant le début du son) via le
+serveur TTS persistant.
 
-ROOT = Path(__file__).resolve().parent.parent
-PIPER_BIN = ROOT / "piper" / "piper"
-MODELS = {
-    "fast": ROOT / "models" / "fr_FR-siwis-low.onnx",
-    "read": ROOT / "models" / "fr_FR-siwis-medium.onnx",
-}
+Nécessite que le serveur soit lancé :
+    python3 scripts/tts_server.py &
+"""
+from __future__ import annotations
+
+import json
+import os
+import socket
+import sys
+
+SOCKET_PATH = os.environ.get("TTS_SOCKET_PATH", "/tmp/piper_tts.sock")
 SAMPLES = {
     "fast": "Il fait beau aujourd'hui.",
     "read": (
@@ -20,25 +22,31 @@ SAMPLES = {
 }
 
 
-def bench(mode: str) -> None:
-    model = MODELS[mode]
-    if not model.exists():
-        print(f"[{mode}] modèle manquant: {model} (lance install.sh)")
-        return
+def request(mode: str, text: str) -> dict:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.connect(SOCKET_PATH)
+        sock.sendall((json.dumps({"mode": mode, "text": text}) + "\n").encode("utf-8"))
+        raw = sock.makefile("r").readline()
+    return json.loads(raw)
 
-    text = SAMPLES[mode]
-    out = Path(f"/tmp/bench_{mode}.wav")
-    start = time.monotonic()
-    subprocess.run(
-        [str(PIPER_BIN), "--model", str(model), "--output_file", str(out)],
-        input=text.encode("utf-8"),
-        check=True,
-        stderr=subprocess.DEVNULL,
-    )
-    elapsed = time.monotonic() - start
-    print(f"[{mode}] temps de synthèse: {elapsed:.2f}s -> {out}")
+
+def main() -> None:
+    try:
+        for mode in ("fast", "read"):
+            request(mode, ".")  # requête de chauffe, hors mesure
+            resp = request(mode, SAMPLES[mode])
+            if resp.get("status") != "ok":
+                print(f"[{mode}] erreur: {resp.get('error')}")
+                continue
+            print(f"[{mode}] latence avant le son (modèle chaud): {resp['synth_seconds']}s")
+    except (FileNotFoundError, ConnectionRefusedError):
+        print(
+            "Le serveur TTS n'est pas démarré. Lance-le d'abord :\n"
+            "  python3 scripts/tts_server.py &",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    for mode in ("fast", "read"):
-        bench(mode)
+    main()

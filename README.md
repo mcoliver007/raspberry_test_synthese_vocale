@@ -50,15 +50,23 @@ export TTS_AUDIO_DEVICE=bluealsa   # ou le nom de sink exact, ex: bluealsa:DEV=X
 
 ## Utilisation
 
-Réponse courte (mode rapide) :
+Piper met plusieurs secondes à charger un modèle en mémoire sur un Pi 3.
+Pour ne pas payer ce coût à chaque phrase, un **serveur persistant** garde
+les deux modèles chargés en permanence ; `tts.py` n'est qu'un client léger
+qui lui envoie le texte.
+
+Démarrer le serveur (une fois, à laisser tourner en arrière-plan) :
+
+```bash
+python3 scripts/tts_server.py &
+```
+
+Puis utiliser le client autant de fois que voulu, sans latence de
+rechargement :
 
 ```bash
 echo "Bonjour, ceci est un test." | python3 scripts/tts.py fast
-```
 
-Lecture d'un texte plus long (mode pipeline) :
-
-```bash
 python3 scripts/tts.py read < exemple_texte_long.txt
 ```
 
@@ -68,5 +76,6 @@ python3 scripts/tts.py read < exemple_texte_long.txt
 python3 scripts/benchmark.py
 ```
 
-Affiche le temps de synthèse pour chaque mode, à comparer aux objectifs
-(quasi instantané pour `fast`, <2s pour `read`).
+Affiche la latence de synthèse (modèle déjà chaud) pour chaque mode, à
+comparer aux objectifs (<2s pour `fast`, 1ère phrase de `read` jouée en <2s
+puis lecture en pipeline).

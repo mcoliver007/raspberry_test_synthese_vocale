@@ -46,9 +46,12 @@ echo "   Si tu utilises une enceinte Bluetooth déjà appairée (bluealsa ou Pul
 echo "   indique le device correspondant via la variable TTS_AUDIO_DEVICE, ex:"
 echo "     export TTS_AUDIO_DEVICE=bluealsa"
 echo
-echo "2) Teste les deux modes :"
+echo "2) Démarre le serveur TTS (garde les modèles chargés, une seule fois) :"
+echo "     python3 scripts/tts_server.py &"
+echo
+echo "3) Teste les deux modes :"
 echo "     echo 'Bonjour, ceci est un test.' | python3 scripts/tts.py fast"
 echo "     python3 scripts/tts.py read < exemple_texte_long.txt"
 echo
-echo "3) Compare les latences :"
+echo "4) Compare les latences :"
 echo "     python3 scripts/benchmark.py"
