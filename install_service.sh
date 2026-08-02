@@ -6,19 +6,21 @@
 # la sortie audio passe par PulseAudio dans la session de l'utilisateur
 # (nécessaire pour l'enceinte Bluetooth A2DP) : un service système lancé
 # en root n'y aurait pas accès.
+#
+# Le fichier .service reste dans le dépôt (pas de copie) : on utilise
+# `systemctl --user link`, qui crée un symlink vers ce fichier. Un
+# `git pull` qui modifie systemd/piper-tts.service est donc pris en compte
+# au prochain `systemctl --user daemon-reload`, sans réinstallation.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-UNIT_DIR="$HOME/.config/systemd/user"
 UNIT_NAME="piper-tts.service"
+UNIT_PATH="$ROOT_DIR/systemd/$UNIT_NAME"
 
-mkdir -p "$UNIT_DIR"
-cp "$ROOT_DIR/systemd/$UNIT_NAME" "$UNIT_DIR/$UNIT_NAME"
+echo "Device audio configuré dans le fichier : $(grep '^Environment=TTS_AUDIO_DEVICE=' "$UNIT_PATH")"
+echo "Pour changer, édite $UNIT_PATH avant de continuer (Ctrl+C pour annuler)."
 
-read -rp "Device audio à utiliser (TTS_AUDIO_DEVICE) [pulse]: " device
-device=${device:-pulse}
-sed -i "s/^Environment=TTS_AUDIO_DEVICE=.*/Environment=TTS_AUDIO_DEVICE=${device}/" "$UNIT_DIR/$UNIT_NAME"
-
+systemctl --user link "$UNIT_PATH"
 systemctl --user daemon-reload
 systemctl --user enable --now "$UNIT_NAME"
 

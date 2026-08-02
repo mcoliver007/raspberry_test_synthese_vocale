@@ -97,10 +97,16 @@ dans un terminal), installe-le comme service `systemd --user` :
 ./install_service.sh
 ```
 
-Ça installe `systemd/piper-tts.service` dans `~/.config/systemd/user/`,
-démarre le serveur immédiatement, l'active au démarrage (via
-`loginctl enable-linger`, pour qu'il tourne même sans session ouverte), et
-le relance automatiquement en cas de plantage.
+Ça exécute `systemctl --user link` sur `systemd/piper-tts.service` (le
+fichier reste dans le dépôt, géré par git — pas de copie dans
+`~/.config/systemd/user/`, juste un symlink), démarre le serveur
+immédiatement, l'active au démarrage (via `loginctl enable-linger`, pour
+qu'il tourne même sans session ouverte), et le relance automatiquement en
+cas de plantage.
+
+Pour changer le device audio (`TTS_AUDIO_DEVICE`), éditer directement
+`systemd/piper-tts.service` puis relancer `systemctl --user daemon-reload
+&& systemctl --user restart piper-tts.service`.
 
 **Un service `--user` plutôt qu'un service système** : la sortie audio
 passe par PulseAudio dans la session de l'utilisateur (nécessaire pour
