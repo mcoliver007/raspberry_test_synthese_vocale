@@ -38,6 +38,16 @@ MODELS = {
     "read": ROOT / "models" / "fr_FR-siwis-low.onnx",
 }
 SOCKET_PATH = os.environ.get("TTS_SOCKET_PATH", "/tmp/piper_tts.sock")
+CLAUSE_BREAK_WORDS = [
+    "afin de", "afin qu'", "afin que", "parce que", "puisque",
+    "pendant que", "alors que", "bien que", "tandis que", "de sorte que",
+    "car", "mais", "donc", "cependant", "toutefois", "quand", "lorsque",
+    "lorsqu'",
+]
+_CONJ_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(w) for w in CLAUSE_BREAK_WORDS) + r")\b",
+    re.IGNORECASE,
+)
 AUDIO_DEVICE = os.environ.get("TTS_AUDIO_DEVICE", "default")
 SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 
@@ -164,12 +174,33 @@ def speak_fast(text: str) -> float:
     return elapsed
 
 
+def _split_clauses(sentence: str) -> list[str]:
+    """Découpe une phrase uniquement aux points de pause naturels : virgules
+    et avant certaines conjonctions de subordination/coordination. Couper à
+    un endroit sans raison syntaxique (ex: nombre de mots arbitraire) casse
+    la prosodie de Piper et s'entend comme une coupure artificielle."""
+    parts = re.split(r"(?<=,)\s+", sentence)
+    chunks: list[str] = []
+    for part in parts:
+        pos = 0
+        for m in _CONJ_RE.finditer(part):
+            if m.start() > pos:
+                chunks.append(part[pos:m.start()].strip())
+                pos = m.start()
+        chunks.append(part[pos:].strip())
+    return [c for c in chunks if c]
+
+
 def speak_read(text: str) -> float:
-    # Découpage au niveau de la phrase uniquement : synthétiser un morceau
-    # de phrase isolément (ex: par tronçons de mots) casse la prosodie de
-    # Piper et s'entend comme des coupures artificielles, même sur une
-    # virgule. Une pause entre deux phrases, elle, est naturelle à l'oreille.
-    chunks = [s.strip() for s in SENTENCE_RE.split(text.strip()) if s.strip()]
+    # Découpage aux frontières de phrase, puis aux points de pause naturels
+    # à l'intérieur de chaque phrase (virgules, conjonctions). Une pause à
+    # un endroit où on respirerait naturellement sonne normale ; une
+    # coupure ailleurs sonne cassée.
+    chunks: list[str] = []
+    for sentence in SENTENCE_RE.split(text.strip()):
+        sentence = sentence.strip()
+        if sentence:
+            chunks.extend(_split_clauses(sentence))
     if not chunks:
         return 0.0
 
