@@ -1,0 +1,14 @@
+[Unit]
+Description=Serveur TTS Piper (persistant, socket Unix)
+After=pulseaudio.service network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/raspberry_test_synthese_vocale
+Environment=TTS_AUDIO_DEVICE=pulse
+ExecStart=/usr/bin/python3 %h/raspberry_test_synthese_vocale/scripts/tts_server.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

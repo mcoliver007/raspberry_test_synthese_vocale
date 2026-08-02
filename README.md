@@ -87,6 +87,43 @@ export TTS_AUDIO_DEVICE=pulse
 python3 scripts/tts_server.py &
 ```
 
+## Utiliser comme service (pour d'autres programmes sur la Pi)
+
+Pour que d'autres services tournant sur la même Raspberry Pi puissent
+utiliser la synthèse vocale (au lieu de lancer `tts_server.py` à la main
+dans un terminal), installe-le comme service `systemd --user` :
+
+```bash
+./install_service.sh
+```
+
+Ça installe `systemd/piper-tts.service` dans `~/.config/systemd/user/`,
+démarre le serveur immédiatement, l'active au démarrage (via
+`loginctl enable-linger`, pour qu'il tourne même sans session ouverte), et
+le relance automatiquement en cas de plantage.
+
+**Un service `--user` plutôt qu'un service système** : la sortie audio
+passe par PulseAudio dans la session de l'utilisateur (nécessaire pour
+l'enceinte Bluetooth). Un service système classique (lancé en root) n'a
+pas accès à cette session audio.
+
+Commandes utiles :
+
+```bash
+systemctl --user status piper-tts.service     # état du service
+journalctl --user -u piper-tts.service -f     # logs en direct
+systemctl --user restart piper-tts.service    # redémarrer (ex: après git pull)
+systemctl --user stop piper-tts.service       # arrêter
+```
+
+**Comment un autre service se connecte** : le protocole ne change pas, un
+programme (Python, Node, script shell...) écrit sur la même machine se
+connecte simplement au socket Unix `/tmp/piper_tts.sock` (ou la valeur de
+`TTS_SOCKET_PATH`) et envoie une ligne JSON `{"mode": "fast"|"read",
+"text": "..."}` — voir `INSTRUCTIONS_IA.md` pour le détail du protocole.
+Le socket est accessible à tout processus local, quel que soit le
+langage ; il n'y a pas d'API réseau à exposer séparément.
+
 ### Comparer les voix manuellement
 
 `fr_FR-siwis-medium` sonne mieux mais ne tient pas le temps réel en
@@ -141,6 +178,13 @@ sur de longs segments, ce n'est pas bloquant : ça se confond avec une
 pause de fin de phrase. Si ça devient gênant, réduire la liste de
 conjonctions de découpe dans `tts_server.py` (`CLAUSE_BREAK_WORDS`) pour
 des segments plus courts.
+
+**Le service systemd ne joue aucun son (mais fonctionne en lançant `tts_server.py` à la main)**
+→ Vérifier que le service tourne bien en `--user` (pas en `sudo systemctl`,
+qui l'installerait comme service système sans accès à la session
+PulseAudio). Vérifier aussi `loginctl enable-linger $USER` (nécessaire si
+le service doit tourner sans session ouverte) et les logs :
+`journalctl --user -u piper-tts.service -f`.
 
 **Latence trop élevée en mode `fast`**
 → Vérifier que le serveur est bien resté démarré (chaque relance recharge
