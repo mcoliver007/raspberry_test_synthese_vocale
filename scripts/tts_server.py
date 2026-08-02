@@ -165,24 +165,38 @@ def speak_fast(text: str) -> float:
 
 
 FIRST_CHUNK_MAX_WORDS = 4
+CHUNK_MAX_WORDS = 8
 
 
-def _split_first_chunk(sentence: str) -> list[str]:
-    """Découpe la 1ère phrase pour que son 1er segment soit court (peu de
-    mots), afin que le son démarre vite même si la phrase entière est
-    longue. Coupe de préférence sur la première virgule proche du début."""
-    words = sentence.split()
-    if len(words) <= FIRST_CHUNK_MAX_WORDS:
-        return [sentence]
+def _split_words(text: str, max_words: int) -> list[str]:
+    """Découpe un texte en segments d'au plus max_words mots (de préférence
+    sur une virgule), pour que la synthèse d'un segment ne prenne jamais
+    beaucoup plus de temps que l'audio en cours de lecture. Nécessaire même
+    au-delà de la 1ère phrase : des phrases longues qui suivent une phrase
+    courte peuvent "rattraper" le pipeline et provoquer des coupures."""
+    words = text.split()
+    if len(words) <= max_words:
+        return [text]
 
-    comma_idx = sentence.find(",")
-    head_budget = len(" ".join(words[: FIRST_CHUNK_MAX_WORDS + 4]))
+    comma_idx = text.find(",")
+    head_budget = len(" ".join(words[: max_words + max_words // 2]))
     if 0 < comma_idx <= head_budget:
-        head, tail = sentence[: comma_idx + 1].strip(), sentence[comma_idx + 1 :].strip()
+        head, tail = text[: comma_idx + 1].strip(), text[comma_idx + 1 :].strip()
     else:
-        head = " ".join(words[:FIRST_CHUNK_MAX_WORDS])
-        tail = " ".join(words[FIRST_CHUNK_MAX_WORDS:])
-    return [head, tail] if tail else [head]
+        head = " ".join(words[:max_words])
+        tail = " ".join(words[max_words:])
+
+    result = [head] if head else []
+    if tail:
+        result += _split_words(tail, max_words)
+    return result
+
+
+def _build_chunks(sentences: list[str]) -> list[str]:
+    chunks = _split_words(sentences[0], FIRST_CHUNK_MAX_WORDS)
+    for sentence in sentences[1:]:
+        chunks += _split_words(sentence, CHUNK_MAX_WORDS)
+    return chunks
 
 
 def speak_read(text: str) -> float:
@@ -190,7 +204,7 @@ def speak_read(text: str) -> float:
     if not sentences:
         return 0.0
 
-    chunks = _split_first_chunk(sentences[0]) + sentences[1:]
+    chunks = _build_chunks(sentences)
 
     first_elapsed = 0.0
     for i, sentence in enumerate(chunks):
