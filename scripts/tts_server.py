@@ -107,13 +107,36 @@ def speak_fast(text: str) -> float:
     return elapsed
 
 
+FIRST_CHUNK_MAX_WORDS = 4
+
+
+def _split_first_chunk(sentence: str) -> list[str]:
+    """Découpe la 1ère phrase pour que son 1er segment soit court (peu de
+    mots), afin que le son démarre vite même si la phrase entière est
+    longue. Coupe de préférence sur la première virgule proche du début."""
+    words = sentence.split()
+    if len(words) <= FIRST_CHUNK_MAX_WORDS:
+        return [sentence]
+
+    comma_idx = sentence.find(",")
+    head_budget = len(" ".join(words[: FIRST_CHUNK_MAX_WORDS + 4]))
+    if 0 < comma_idx <= head_budget:
+        head, tail = sentence[: comma_idx + 1].strip(), sentence[comma_idx + 1 :].strip()
+    else:
+        head = " ".join(words[:FIRST_CHUNK_MAX_WORDS])
+        tail = " ".join(words[FIRST_CHUNK_MAX_WORDS:])
+    return [head, tail] if tail else [head]
+
+
 def speak_read(text: str) -> float:
     sentences = [s.strip() for s in SENTENCE_RE.split(text.strip()) if s.strip()]
     if not sentences:
         return 0.0
 
+    chunks = _split_first_chunk(sentences[0]) + sentences[1:]
+
     first_elapsed = 0.0
-    for i, sentence in enumerate(sentences):
+    for i, sentence in enumerate(chunks):
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             out = Path(f.name)
         start = time.monotonic()
