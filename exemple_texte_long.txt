@@ -1,0 +1,1 @@
+Voici un exemple de texte un peu plus long, utilisé pour tester le mode lecture. Il contient plusieurs phrases afin de vérifier que le découpage et la lecture en pipeline fonctionnent correctement. L'objectif est que la première phrase commence à être jouée en moins de deux secondes, pendant que les phrases suivantes continuent d'être synthétisées en arrière-plan.
