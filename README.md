@@ -13,16 +13,27 @@ synthèse vocale offline pour en juger la qualité sonore.
 [Piper](https://github.com/rhasspy/piper) est un moteur de synthèse vocale
 neuronal, 100% offline, léger et rapide même sur Raspberry Pi 3.
 
-Deux voix françaises sont utilisées pour deux stratégies différentes :
+Deux modes, avec la même voix `fr_FR-siwis-low` :
 
-| Mode | Voix | Usage | Objectif de latence |
-|---|---|---|---|
-| `fast` | `fr_FR-siwis-low` | réponses courtes (Q/R) | quasi instantané |
-| `read` | `fr_FR-siwis-medium` | lecture de textes plus longs | 1ère phrase jouée en <2s, puis lecture en pipeline |
+| Mode | Usage | Comportement |
+|---|---|---|
+| `fast` | réponses courtes (Q/R) | synthèse + lecture directe, quasi instantané |
+| `read` | lecture de textes plus longs | découpage en phrases, lues en pipeline (la suivante se synthétise pendant que la précédente joue), 1ère phrase jouée en <2s |
 
-Le mode `read` découpe le texte en phrases et synthétise la phrase suivante
-pendant que la précédente est jouée, ce qui garde une latence perçue faible
-même pour un texte long.
+**Pourquoi pas la voix `fr_FR-siwis-medium` pour `read` ?** Elle sonne mieux
+mais synthétise environ 2x plus lentement que le temps réel sur un Pi 3
+(mesuré : ~0.75s par mot synthétisé, pour ~0.4s d'audio produit). Sur un
+flux de lecture continue, ça finit toujours par vider le tampon audio
+(underruns / coupures audibles), quel que soit le système de streaming.
+`fr_FR-siwis-medium` reste téléchargée par `install.sh` pour comparer les
+deux voix manuellement (un seul appel, texte court, sans contrainte de
+temps réel) :
+
+```bash
+echo "Ceci est un test avec la voix medium." | \
+  piper/piper --model models/fr_FR-siwis-medium.onnx --output_file /tmp/medium.wav
+aplay -D pulse /tmp/medium.wav
+```
 
 ## Installation
 

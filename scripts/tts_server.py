@@ -27,9 +27,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PIPER_BIN = ROOT / "piper" / "piper"
+# La voix "medium" (fr_FR-siwis-medium) synthétise ~2x plus lentement que le
+# temps réel sur un Pi 3 (mesuré: ~0.75s/mot pour ~0.4s d'audio produit).
+# Elle ne peut donc pas alimenter un flux de lecture en continu sans
+# coupures (underruns) : les deux modes utilisent la voix "low", proche du
+# temps réel. Le modèle medium reste téléchargé par install.sh pour des
+# comparaisons manuelles de qualité (voir README).
 MODELS = {
     "fast": ROOT / "models" / "fr_FR-siwis-low.onnx",
-    "read": ROOT / "models" / "fr_FR-siwis-medium.onnx",
+    "read": ROOT / "models" / "fr_FR-siwis-low.onnx",
 }
 SOCKET_PATH = os.environ.get("TTS_SOCKET_PATH", "/tmp/piper_tts.sock")
 AUDIO_DEVICE = os.environ.get("TTS_AUDIO_DEVICE", "default")
