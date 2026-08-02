@@ -38,6 +38,13 @@ MODELS = {
     "read": ROOT / "models" / "fr_FR-siwis-low.onnx",
 }
 SOCKET_PATH = os.environ.get("TTS_SOCKET_PATH", "/tmp/piper_tts.sock")
+# Phrase d'accroche jouée en tout début de mode "read" : synthétisée une
+# seule fois au démarrage du serveur et mise en cache, elle se joue quasi
+# instantanément à chaque requête. Ça donne un retour audio immédiat à
+# l'utilisateur (il sait qu'une réponse arrive) et gagne ~1-1.5s de marge
+# pendant lesquelles le vrai contenu continue de se synthétiser.
+INTRO_TEXT = os.environ.get("TTS_INTRO_TEXT", "Voici ma réponse :")
+INTRO_PCM: bytes = b""
 CLAUSE_BREAK_WORDS = [
     "afin de", "afin qu'", "afin que", "parce que", "puisque",
     "pendant que", "alors que", "bien que", "tandis que", "de sorte que",
@@ -149,6 +156,17 @@ class PiperWorker:
         self.proc.terminate()
 
 
+def _play_pcm_bg(mode: str, pcm_data: bytes) -> None:
+    def run() -> None:
+        try:
+            with PLAY_LOCK:
+                PLAYERS[mode].write(pcm_data)
+        except Exception as exc:  # noqa: BLE001 - on log, on ne bloque pas la synthèse
+            print(f"[erreur lecture audio] mode={mode}: {exc}", file=sys.stderr)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 def _play_bg(mode: str, wav_path: Path) -> None:
     def run() -> None:
         try:
@@ -204,6 +222,9 @@ def speak_read(text: str) -> float:
     if not chunks:
         return 0.0
 
+    if INTRO_PCM:
+        _play_pcm_bg("read", INTRO_PCM)
+
     first_elapsed = 0.0
     for i, sentence in enumerate(chunks):
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -256,6 +277,8 @@ class ThreadingUnixStreamServer(
 
 
 def main() -> None:
+    global INTRO_PCM
+
     print(f"Sortie audio (TTS_AUDIO_DEVICE): {AUDIO_DEVICE!r}")
     for mode, model_path in MODELS.items():
         if not model_path.exists():
@@ -263,6 +286,14 @@ def main() -> None:
         print(f"Chargement du modèle {mode}: {model_path.name}...")
         WORKERS[mode] = PiperWorker(model_path)
         PLAYERS[mode] = RawPlayer(AUDIO_DEVICE, _sample_rate(model_path))
+
+    print(f"Préparation de l'intro de lecture: {INTRO_TEXT!r}")
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        intro_path = Path(f.name)
+    WORKERS["read"].synth(INTRO_TEXT, intro_path)
+    with wave.open(str(intro_path), "rb") as wf:
+        INTRO_PCM = wf.readframes(wf.getnframes())
+    intro_path.unlink(missing_ok=True)
 
     if os.path.exists(SOCKET_PATH):
         os.remove(SOCKET_PATH)
