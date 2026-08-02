@@ -164,47 +164,14 @@ def speak_fast(text: str) -> float:
     return elapsed
 
 
-FIRST_CHUNK_MAX_WORDS = 4
-CHUNK_MAX_WORDS = 8
-
-
-def _split_words(text: str, max_words: int) -> list[str]:
-    """Découpe un texte en segments d'au plus max_words mots (de préférence
-    sur une virgule), pour que la synthèse d'un segment ne prenne jamais
-    beaucoup plus de temps que l'audio en cours de lecture. Nécessaire même
-    au-delà de la 1ère phrase : des phrases longues qui suivent une phrase
-    courte peuvent "rattraper" le pipeline et provoquer des coupures."""
-    words = text.split()
-    if len(words) <= max_words:
-        return [text]
-
-    comma_idx = text.find(",")
-    head_budget = len(" ".join(words[: max_words + max_words // 2]))
-    if 0 < comma_idx <= head_budget:
-        head, tail = text[: comma_idx + 1].strip(), text[comma_idx + 1 :].strip()
-    else:
-        head = " ".join(words[:max_words])
-        tail = " ".join(words[max_words:])
-
-    result = [head] if head else []
-    if tail:
-        result += _split_words(tail, max_words)
-    return result
-
-
-def _build_chunks(sentences: list[str]) -> list[str]:
-    chunks = _split_words(sentences[0], FIRST_CHUNK_MAX_WORDS)
-    for sentence in sentences[1:]:
-        chunks += _split_words(sentence, CHUNK_MAX_WORDS)
-    return chunks
-
-
 def speak_read(text: str) -> float:
-    sentences = [s.strip() for s in SENTENCE_RE.split(text.strip()) if s.strip()]
-    if not sentences:
+    # Découpage au niveau de la phrase uniquement : synthétiser un morceau
+    # de phrase isolément (ex: par tronçons de mots) casse la prosodie de
+    # Piper et s'entend comme des coupures artificielles, même sur une
+    # virgule. Une pause entre deux phrases, elle, est naturelle à l'oreille.
+    chunks = [s.strip() for s in SENTENCE_RE.split(text.strip()) if s.strip()]
+    if not chunks:
         return 0.0
-
-    chunks = _build_chunks(sentences)
 
     first_elapsed = 0.0
     for i, sentence in enumerate(chunks):
