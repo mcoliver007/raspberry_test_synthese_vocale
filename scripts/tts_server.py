@@ -76,31 +76,59 @@ class RawPlayer:
     """Processus aplay unique et persistant par voix : on lui écrit du PCM
     brut en continu au lieu de relancer aplay à chaque phrase. Ça évite que
     la liaison Bluetooth A2DP se remette en veille (SUSPENDED) entre deux
-    phrases, ce qui causait le silence audible entre chaque segment lu."""
+    phrases, ce qui causait le silence audible entre chaque segment lu.
+
+    Ce process persistant peut mourir en cours de route (underrun, erreur
+    E/S ALSA suite à une reconnexion Bluetooth qui recrée le sink
+    PulseAudio sous-jacent) : sans détection, toute écriture suivante
+    échoue silencieusement en arrière-plan (Broken pipe) jusqu'au
+    redémarrage manuel du service, alors que le client continue de
+    recevoir "status: ok". write() détecte donc un process mort et le
+    relance automatiquement avant/pendant l'écriture."""
 
     def __init__(self, device: str, sample_rate: int, channels: int = 1):
+        self.device = device
+        self.sample_rate = sample_rate
+        self.channels = channels
+        self.proc: subprocess.Popen | None = None
+        self._spawn()
+
+    def _spawn(self) -> None:
         self.proc = subprocess.Popen(
             [
-                "aplay", "-q", "-D", device,
-                "-f", "S16_LE", "-r", str(sample_rate), "-c", str(channels),
+                "aplay", "-q", "-D", self.device,
+                "-f", "S16_LE", "-r", str(self.sample_rate), "-c", str(self.channels),
                 "-t", "raw", "-",
             ],
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        threading.Thread(target=self._drain_stderr, daemon=True).start()
+        threading.Thread(target=self._drain_stderr, args=(self.proc,), daemon=True).start()
 
-    def _drain_stderr(self) -> None:
-        assert self.proc.stderr is not None
-        for line in self.proc.stderr:
+    @staticmethod
+    def _drain_stderr(proc: subprocess.Popen) -> None:
+        assert proc.stderr is not None
+        for line in proc.stderr:
             sys.stderr.write(f"[aplay] {line.decode('utf-8', 'replace')}")
 
     def write(self, pcm_data: bytes) -> None:
+        assert self.proc is not None
+        if self.proc.poll() is not None:
+            sys.stderr.write("[aplay] processus persistant mort, redémarrage...\n")
+            self._spawn()
         assert self.proc.stdin is not None
-        self.proc.stdin.write(pcm_data)
-        self.proc.stdin.flush()
+        try:
+            self.proc.stdin.write(pcm_data)
+            self.proc.stdin.flush()
+        except (BrokenPipeError, OSError) as exc:
+            sys.stderr.write(f"[aplay] écriture échouée ({exc}), redémarrage et nouvelle tentative...\n")
+            self._spawn()
+            assert self.proc.stdin is not None
+            self.proc.stdin.write(pcm_data)
+            self.proc.stdin.flush()
 
     def close(self) -> None:
+        assert self.proc is not None
         try:
             if self.proc.stdin:
                 self.proc.stdin.close()
