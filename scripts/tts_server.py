@@ -80,11 +80,19 @@ class RawPlayer:
 
     Ce process persistant peut mourir en cours de route (underrun, erreur
     E/S ALSA suite à une reconnexion Bluetooth qui recrée le sink
-    PulseAudio sous-jacent) : sans détection, toute écriture suivante
+    PulseAudio sous-jacent, ou PulseAudio lui-même tué et relancé par
+    bt-manager après un blocage) : sans détection, toute écriture suivante
     échoue silencieusement en arrière-plan (Broken pipe) jusqu'au
     redémarrage manuel du service, alors que le client continue de
     recevoir "status: ok". write() détecte donc un process mort et le
-    relance automatiquement avant/pendant l'écriture."""
+    relance automatiquement avant/pendant l'écriture, avec plusieurs
+    tentatives espacées : un redémarrage de PulseAudio par bt-manager peut
+    prendre plusieurs secondes (relance + reconfiguration du profil A2DP),
+    et une seule tentative immédiate peut retomber sur un serveur pas
+    encore prêt."""
+
+    WRITE_ATTEMPTS = 4
+    RETRY_DELAY = 1.0  # secondes entre deux tentatives
 
     def __init__(self, device: str, sample_rate: int, channels: int = 1):
         self.device = device
@@ -116,16 +124,27 @@ class RawPlayer:
         if self.proc.poll() is not None:
             sys.stderr.write("[aplay] processus persistant mort, redémarrage...\n")
             self._spawn()
-        assert self.proc.stdin is not None
-        try:
-            self.proc.stdin.write(pcm_data)
-            self.proc.stdin.flush()
-        except (BrokenPipeError, OSError) as exc:
-            sys.stderr.write(f"[aplay] écriture échouée ({exc}), redémarrage et nouvelle tentative...\n")
-            self._spawn()
-            assert self.proc.stdin is not None
-            self.proc.stdin.write(pcm_data)
-            self.proc.stdin.flush()
+
+        last_exc: Exception | None = None
+        for attempt in range(1, self.WRITE_ATTEMPTS + 1):
+            assert self.proc is not None and self.proc.stdin is not None
+            try:
+                self.proc.stdin.write(pcm_data)
+                self.proc.stdin.flush()
+                return
+            except (BrokenPipeError, OSError) as exc:
+                last_exc = exc
+                sys.stderr.write(
+                    f"[aplay] écriture échouée ({exc}), tentative {attempt}/{self.WRITE_ATTEMPTS}...\n"
+                )
+                if attempt < self.WRITE_ATTEMPTS:
+                    time.sleep(self.RETRY_DELAY)
+                    # Force le redémarrage même si poll() ne montre pas encore
+                    # le process comme mort (l'exit peut être légèrement
+                    # différé par rapport à l'échec de l'écriture).
+                    self._spawn()
+        assert last_exc is not None
+        raise last_exc
 
     def close(self) -> None:
         assert self.proc is not None
